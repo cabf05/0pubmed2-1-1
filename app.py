@@ -4,26 +4,24 @@ from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.decomposition import NMF
 
 st.set_page_config(page_title="Topic Explorer", layout="wide")
-
 st.title("🔍 Topic Modeling Explorer")
-st.markdown("Faça upload de um arquivo CSV com uma coluna de texto (ex.: abstracts).")
+st.markdown("Upload CSV com uma coluna de texto (ex.: abstracts)")
 
-uploaded_file = st.file_uploader("Escolha um arquivo CSV", type="csv")
+uploaded_file = st.file_uploader("Escolha um CSV", type="csv")
 
-if uploaded_file is not None:
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
-
     text_col = st.selectbox("Selecione a coluna de texto", df.columns)
 
     if st.button("Analisar"):
         texts = df[text_col].dropna().astype(str)
-
-        # Ajuste dinâmico do min_df
         n_docs = len(texts)
-        if n_docs < 50:
-            min_df_value = 1
+
+        # Ajuste seguro de min_df
+        if n_docs < 20:
+            min_df_value = 1  # pelo menos 1 documento
         else:
-            min_df_value = 0.01
+            min_df_value = max(1, int(n_docs * 0.01))  # 1% dos docs
 
         vectorizer = TfidfVectorizer(
             stop_words=ENGLISH_STOP_WORDS,
