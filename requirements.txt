@@ -1,11 +1,3 @@
-# básico
-streamlit>=1.18
-pandas>=1.5
-numpy==1.26.4
-scikit-learn>=1.2
-altair>=5.0
-xlsxwriter
-
-# spaCy + modelo (pinados para compatibilidade)
-spacy==3.7.5
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+streamlit
+pandas
+scikit-learn
