@@ -21,11 +21,11 @@ if uploaded_file is not None:
     if st.button("Analisar"):
         texts = df[text_col].dropna().astype(str)
 
-        # Vetorização com melhorias
+        # Vetorização com ajustes compatíveis
         vectorizer = TfidfVectorizer(
             stop_words=ENGLISH_STOP_WORDS,
             ngram_range=(1, 2),   # unigrams + bigrams
-            min_df=2,             # ignora termos que aparecem em <2 docs
+            min_df=0.01,          # ignora termos que aparecem em menos de 1% dos docs
             max_df=0.85           # ignora termos muito comuns
         )
         X = vectorizer.fit_transform(texts)
