@@ -158,3 +158,29 @@ st.subheader("N-grams — Frequências")
 st.dataframe(df_ngrams, use_container_width=True)
 
 # TF-IDF
+if tfidf_ngram_choice=="1-gram": tfidf_ngram=(1,1)
+elif tfidf_ngram_choice=="1-2 grams": tfidf_ngram=(1,2)
+else: tfidf_ngram=(1,3)
+df_tfidf, tf_vectorizer, tfidf_matrix = compute_tfidf(cleaned_docs, ngram_range=tfidf_ngram, top_k=top_k)
+st.subheader("TF-IDF — Top termos")
+st.dataframe(df_tfidf, use_container_width=True)
+
+# NOVELTY detection
+st.subheader("Detecção de 'Novelty' (palavras fora do vocabulário histórico)")
+df_docs_novel, df_top_new = novelty_detection(token_lists, historical_vocab, top_k=top_k)
+
+# Validar novos tokens via MeSH
+mesh_results = validate_terms_mesh(df_top_new['token'].tolist())
+df_top_new['validated_mesh'] = df_top_new['token'].map(mesh_results)
+st.markdown("**Top tokens novos validados no MeSH**")
+st.dataframe(df_top_new, use_container_width=True)
+
+# Split em termos validados e candidatos novos
+validated_tokens = df_top_new[df_top_new['validated_mesh']]
+candidate_tokens = df_top_new[~df_top_new['validated_mesh']]
+st.subheader("📂 Termos validados no MeSH")
+st.dataframe(validated_tokens, use_container_width=True)
+st.subheader("🌱 Candidatos novos (não encontrados no MeSH)")
+st.dataframe(candidate_tokens, use_container_width=True)
+
+
