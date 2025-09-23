@@ -6,18 +6,18 @@ from collections import Counter
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer, ENGLISH_STOP_WORDS
 import altair as alt
 import io
+import requests
 
-st.set_page_config(page_title="Text Trends Analyzer", layout="wide")
+st.set_page_config(page_title="Text Trends Analyzer with MeSH", layout="wide")
 
 # -------------------------
-# Default vocab histórico
+# Vocabulário histórico e stopwords médicas
 # -------------------------
 DEFAULT_VOCAB = {"study","patient","patients","results","conclusion","method","methods","background",
                 "objective","aim","participants","randomized","control","group","groups","significant",
                 "analysis","data","clinical","treatment","age","years","percent","increase","decrease",
                 "observed","reported","compared","model","measure","followup","outcome","sample"}
 
-# Stopwords médicas expandidas
 MEDICAL_STOPWORDS = set([
     "trial", "control", "conclusion", "treatment", "significant", "data",
     "baseline", "adverse", "event", "study", "patients", "results",
@@ -50,22 +50,17 @@ def preprocess_texts(texts, extra_stopwords):
     return cleaned_docs, token_lists
 
 @st.cache_data
-def compute_ngrams_counts(cleaned_docs, ngram_range=(1,3), top_k=50, apply_filters=False, biomed_dict=None):
+def compute_ngrams_counts(cleaned_docs, ngram_range=(1,3), top_k=50, apply_filters=False):
     if len(cleaned_docs)==0: return pd.DataFrame(columns=["term","count"])
-
     vec = CountVectorizer(ngram_range=ngram_range, token_pattern=r'(?u)\b[a-z]{2,}\b')
     X = vec.fit_transform(cleaned_docs)
     sums = np.asarray(X.sum(axis=0)).ravel()
     terms = np.array(vec.get_feature_names_out())
     df = pd.DataFrame({"term":terms, "count":sums})
 
-    # Filtro inteligente: remove n-grams que começam com stopwords médicas
     if apply_filters:
         df = df[~df['term'].str.split().str[0].isin(MEDICAL_STOPWORDS)]
-
-        # mantém termos do dicionário ou heurística de substantivos técnicos simples
-        if biomed_dict is not None:
-            df = df[df['term'].isin(biomed_dict) | df['term'].str.contains(r'[A-Z0-9]|mab$|ib$|ine$|ol$', regex=True, case=False)]
+        df = df[df['term'].str.contains(r'[A-Z0-9]|mab$|ib$|ine$|ol$|gene|receptor', regex=True, case=False)]
 
     df = df.sort_values("count", ascending=False).reset_index(drop=True)
     return df.head(top_k)
@@ -100,30 +95,48 @@ def novelty_detection(token_lists, historical_vocab, top_k=50):
     return df_docs, df_top_new
 
 # -------------------------
-# UI e Upload
+# MeSH API integration
 # -------------------------
-st.title("🔎 Text Trends Analyzer (Streamlit)")
-uploaded_file = st.file_uploader("1) Carregue o CSV", type=["csv"])
+@st.cache_data
+def check_mesh(term):
+    url = f"https://id.nlm.nih.gov/mesh/lookup/descriptor?label={term}&match=exact"
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200 and resp.json():
+            return True
+    except:
+        pass
+    return False
+
+@st.cache_data
+def validate_terms_mesh(tokens):
+    results = {}
+    for t in tokens:
+        results[t] = check_mesh(t)
+    return results
+
+# -------------------------
+# UI
+# -------------------------
+st.title("🔎 Text Trends Analyzer with MeSH")
+uploaded_file = st.file_uploader("Carregue CSV", type=["csv"])
 if uploaded_file is None: st.stop()
+
 try:
     df = pd.read_csv(uploaded_file, encoding="utf-8", engine="python")
 except: st.stop()
 
 col1,col2,col3 = st.columns([1,1,1])
-with col1: title_col = st.selectbox("Coluna de Title", df.columns, index=0)
-with col2: abstract_col = st.selectbox("Coluna de Abstract", df.columns, index=min(1,len(df.columns)-1))
-with col3: date_col = st.selectbox("Coluna de Date (opcional)", [None]+list(df.columns), index=0)
+with col1: title_col = st.selectbox("Coluna Title", df.columns, index=0)
+with col2: abstract_col = st.selectbox("Coluna Abstract", df.columns, index=min(1,len(df.columns)-1))
+with col3: date_col = st.selectbox("Coluna Date (opcional)", [None]+list(df.columns), index=0)
 combine_texts = st.checkbox("Combinar Title + Abstract", True)
 extra_stop_text = st.text_area("Stopwords adicionais (vírgula)", value="study,patients")
 extra_stopwords = [w.strip().lower() for w in extra_stop_text.split(",") if w.strip()]
 
-vocab_file = st.file_uploader("Opcional: vocabulário histórico", type=["txt"])
+vocab_file = st.file_uploader("Vocabulário histórico opcional", type=["txt"])
 if vocab_file: historical_vocab = {line.strip().lower() for line in vocab_file.read().decode("utf-8").splitlines() if line.strip()}
 else: historical_vocab = DEFAULT_VOCAB.copy()
-
-biomed_file = st.file_uploader("Opcional: Dicionário biomédico (MeSH/UMLS)", type=["txt"])
-if biomed_file: biomed_dict = {line.strip().lower() for line in biomed_file.read().decode("utf-8").splitlines() if line.strip()}
-else: biomed_dict = None
 
 ngram_choice = st.selectbox("N-grams", ["1-gram","1-2 grams","1-2-3 grams"], index=1)
 tfidf_ngram_choice = st.selectbox("TF-IDF n-grams", ["1-gram","1-2 grams","1-3 grams"], index=0)
@@ -136,22 +149,12 @@ if combine_texts: df['text_raw'] = df[title_col].fillna('').astype(str) + ". " +
 else: df['text_raw'] = df[abstract_col].fillna('').astype(str)
 cleaned_docs, token_lists = preprocess_texts(df['text_raw'].tolist(), extra_stopwords)
 
-# NGRAMS Frequência com filtro inteligente
+# NGRAMS com filtro
 if ngram_choice=="1-gram": ngram_range=(1,1)
 elif ngram_choice=="1-2 grams": ngram_range=(1,2)
 else: ngram_range=(1,3)
-df_ngrams = compute_ngrams_counts(cleaned_docs, ngram_range=ngram_range, top_k=top_k, apply_filters=True, biomed_dict=biomed_dict)
+df_ngrams = compute_ngrams_counts(cleaned_docs, ngram_range=ngram_range, top_k=top_k, apply_filters=True)
 st.subheader("N-grams — Frequências")
 st.dataframe(df_ngrams, use_container_width=True)
 
 # TF-IDF
-if tfidf_ngram_choice=="1-gram": tfidf_ngram=(1,1)
-elif tfidf_ngram_choice=="1-2 grams": tfidf_ngram=(1,2)
-else: tfidf_ngram=(1,3)
-df_tfidf, tf_vectorizer, tfidf_matrix = compute_tfidf(cleaned_docs, ngram_range=tfidf_ngram, top_k=top_k)
-st.subheader("TF-IDF — termos mais importantes")
-st.dataframe(df_tfidf, use_container_width=True)
-
-# NOVELTY detection
-df_docs_novel, df_top_new = novelty_detection(token_lists, historical_vocab, top_k=top_k)
-st.sub
