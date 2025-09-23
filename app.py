@@ -99,7 +99,7 @@ def novelty_detection(token_lists, historical_vocab, top_k=50):
 # -------------------------
 @st.cache_data
 def check_mesh(term):
-    url = f"https://id.nlm.nih.gov/mesh/lookup/descriptor?label={term}&match=exact"
+    url = f"https://id.nlm.nih.gov/mesh/lookup/descriptor?label={term}&match=contains"
     try:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200 and resp.json():
